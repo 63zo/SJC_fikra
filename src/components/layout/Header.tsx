@@ -38,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { t, language, toggleLanguage } = useLanguage();
   const { currentUser, logout, switchDemoRole } = useAuth();
-  const { syncStatus, syncWithCloud, lastSyncTime } = useIdeas();
+  const { syncStatus, syncWithCloud, lastSyncTime, isSupabaseConnected } = useIdeas();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleRoleSwitch = (role: UserRole) => {
@@ -89,22 +89,29 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
                 : syncStatus === 'error'
                 ? 'bg-rose-500/30 text-rose-200 border-rose-400/50'
+                : isSupabaseConnected
+                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/50'
                 : 'bg-black/20 hover:bg-black/30 text-slate-200 border-sjc-gold/30'
             }`}
             title={
               language === 'ar'
-                ? `مزامنة سحابية (آخر تحديث: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString('ar-QA') : 'مكتمل'})`
-                : `Cloud Sync (Last: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : 'Ready'})`
+                ? `قاعدة بيانات Supabase السحابية (آخر مزامنة: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString('ar-QA') : 'مكتمل'})`
+                : `Live Supabase Cloud (Last Sync: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : 'Ready'})`
             }
           >
+            {isSupabaseConnected && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            )}
             <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin text-amber-300' : 'text-sjc-gold'}`} />
             <span className="hidden xs:inline">
               {syncStatus === 'syncing'
                 ? language === 'ar' ? 'جاري المزامنة' : 'Syncing...'
                 : syncStatus === 'synced'
-                ? language === 'ar' ? 'متزامن' : 'Synced'
+                ? language === 'ar' ? 'متزامن (Supabase)' : 'Synced'
                 : syncStatus === 'error'
                 ? language === 'ar' ? 'إعادة المحاولة' : 'Retry'
+                : isSupabaseConnected
+                ? language === 'ar' ? 'سحابي مباشر' : 'Supabase Live'
                 : language === 'ar' ? 'مزامنة السحابة' : 'Cloud Sync'}
             </span>
           </button>

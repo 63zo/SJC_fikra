@@ -27,6 +27,18 @@ import {
   getLastCloudSyncTime,
   CloudDatabasePayload,
 } from '../services/cloudSyncService';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import {
+  fetchIdeasFromCloud,
+  fetchCommentsFromCloud,
+  upsertIdeaToCloud,
+  upsertCommentToCloud,
+  seedInitialIdeasToCloud,
+  seedInitialCommentsToCloud,
+  updateIdeaCommentsCount,
+  mapRowToIdea,
+  mapRowToComment,
+} from '../services/supabaseService';
 import { useAuth } from './AuthContext';
 
 interface IdeaContextType {
@@ -40,6 +52,7 @@ interface IdeaContextType {
   stats: SystemStats;
   syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
   lastSyncTime: string | null;
+  isSupabaseConnected: boolean;
   syncWithCloud: () => Promise<boolean>;
   pushToCloud: () => Promise<boolean>;
   pullFromCloud: () => Promise<boolean>;
@@ -143,6 +156,15 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const pushToCloud = async (): Promise<boolean> => {
     setSyncStatus('syncing');
+    if (isSupabaseConfigured) {
+      const ok = await seedInitialIdeasToCloud(ideas);
+      if (ok) {
+        setSyncStatus('synced');
+        setLastSyncTimeState(new Date().toISOString());
+        setTimeout(() => setSyncStatus('idle'), 3000);
+        return true;
+      }
+    }
     const res = await pushDatabaseToCloud(getDatabasePayload());
     if (res.success) {
       setSyncStatus('synced');
@@ -158,6 +180,18 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const pullFromCloud = async (): Promise<boolean> => {
     setSyncStatus('syncing');
+    if (isSupabaseConfigured) {
+      const cloudIdeas = await fetchIdeasFromCloud();
+      const cloudComments = await fetchCommentsFromCloud();
+      if (cloudIdeas) {
+        setIdeas(cloudIdeas);
+        if (cloudComments) setComments(cloudComments);
+        setSyncStatus('synced');
+        setLastSyncTimeState(new Date().toISOString());
+        setTimeout(() => setSyncStatus('idle'), 3000);
+        return true;
+      }
+    }
     const res = await pullDatabaseFromCloud();
     if (res.success && res.data) {
       if (res.data.ideas) setIdeas(prev => mergeIdeas(prev, res.data!.ideas));
@@ -177,6 +211,9 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const syncWithCloud = async (): Promise<boolean> => {
+    if (isSupabaseConfigured) {
+      return pullFromCloud();
+    }
     setSyncStatus('syncing');
     try {
       const pullRes = await pullDatabaseFromCloud();
@@ -237,14 +274,101 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Initial cloud check on mount if online
+  // Initial Supabase fetch, auto-seed if remote empty, and live Realtime subscription
   useEffect(() => {
-    if (navigator.onLine) {
-      const timer = setTimeout(() => {
-        syncWithCloud().catch(() => {});
-      }, 1500);
-      return () => clearTimeout(timer);
+    if (!isSupabaseConfigured || !supabase) {
+      if (navigator.onLine) {
+        const timer = setTimeout(() => {
+          syncWithCloud().catch(() => {});
+        }, 1500);
+        return () => clearTimeout(timer);
+      }
+      return;
     }
+
+    const initData = async () => {
+      setSyncStatus('syncing');
+      try {
+        const [cloudIdeas, cloudComments] = await Promise.all([
+          fetchIdeasFromCloud(),
+          fetchCommentsFromCloud(),
+        ]);
+
+        if (cloudIdeas && cloudIdeas.length > 0) {
+          setIdeas(cloudIdeas);
+          setLastSyncTimeState(new Date().toISOString());
+        } else if (cloudIdeas && cloudIdeas.length === 0) {
+          // If remote is fresh/empty, seed initial ideas so both devices start with existing ideas
+          await seedInitialIdeasToCloud(ideas);
+        }
+
+        if (cloudComments && cloudComments.length > 0) {
+          setComments(cloudComments);
+        } else if (cloudComments && cloudComments.length === 0 && comments.length > 0) {
+          await seedInitialCommentsToCloud(comments);
+        }
+
+        setSyncStatus('synced');
+        setTimeout(() => setSyncStatus('idle'), 2500);
+      } catch (err) {
+        console.error('Supabase init error:', err);
+        setSyncStatus('error');
+        setTimeout(() => setSyncStatus('idle'), 3000);
+      }
+    };
+
+    initData();
+
+    // Setup Supabase Realtime channel for live multi-device synchronization
+    const channel = supabase
+      .channel('public:sjc_live_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ideas' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newIdea = mapRowToIdea(payload.new);
+            setIdeas(prev => {
+              if (prev.some(i => i.id === newIdea.id)) return prev;
+              return [newIdea, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedIdea = mapRowToIdea(payload.new);
+            setIdeas(prev =>
+              prev.map(i => (i.id === updatedIdea.id ? updatedIdea : i))
+            );
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            setIdeas(prev => prev.filter(i => i.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'comments' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newComm = mapRowToComment(payload.new);
+            setComments(prev => {
+              if (prev.some(c => c.id === newComm.id)) return prev;
+              return [newComm, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedComm = mapRowToComment(payload.new);
+            setComments(prev =>
+              prev.map(c => (c.id === updatedComm.id ? updatedComm : c))
+            );
+          } else if (payload.eventType === 'DELETE' && payload.old?.id) {
+            setComments(prev => prev.filter(c => c.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -322,6 +446,12 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setIdeas(prev => [newIdea, ...prev]);
 
+    if (isSupabaseConfigured) {
+      upsertIdeaToCloud(newIdea).catch(err => {
+        console.error('Failed to sync new idea to Supabase:', err);
+      });
+    }
+
     // Fire celebratory confetti
     try {
       confetti({
@@ -341,8 +471,9 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser) return;
     const userId = currentUser.id;
 
-    setIdeas(prev =>
-      prev.map(idea => {
+    setIdeas(prev => {
+      let targetIdea: Idea | null = null;
+      const updated = prev.map(idea => {
         if (idea.id !== ideaId) return idea;
 
         const currentVote = idea.votedUsers[userId];
@@ -368,14 +499,26 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        return {
+        const newIdeaObj: Idea = {
           ...idea,
           upvotes: Math.max(0, idea.upvotes + upDiff),
           downvotes: Math.max(0, idea.downvotes + downDiff),
           votedUsers: updatedVotedUsers,
+          updatedAt: new Date().toISOString(),
         };
-      })
-    );
+
+        targetIdea = newIdeaObj;
+        return newIdeaObj;
+      });
+
+      if (targetIdea && isSupabaseConfigured) {
+        upsertIdeaToCloud(targetIdea).catch(err => {
+          console.error('Failed to sync vote to Supabase:', err);
+        });
+      }
+
+      return updated;
+    });
   };
 
   const addComment = (ideaId: string, text: string) => {
@@ -395,8 +538,26 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setComments(prev => [newComment, ...prev]);
+
+    if (isSupabaseConfigured) {
+      upsertCommentToCloud(newComment).catch(err => {
+        console.error('Failed to sync comment to Supabase:', err);
+      });
+    }
+
     setIdeas(prev =>
-      prev.map(i => (i.id === ideaId ? { ...i, commentsCount: i.commentsCount + 1 } : i))
+      prev.map(i => {
+        if (i.id === ideaId) {
+          const updatedCount = i.commentsCount + 1;
+          if (isSupabaseConfigured) {
+            updateIdeaCommentsCount(ideaId, updatedCount).catch(err => {
+              console.error('Failed to sync comments count to Supabase:', err);
+            });
+          }
+          return { ...i, commentsCount: updatedCount, updatedAt: new Date().toISOString() };
+        }
+        return i;
+      })
     );
   };
 
@@ -404,17 +565,28 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser) return;
     const userId = currentUser.id;
 
-    setComments(prev =>
-      prev.map(comm => {
+    setComments(prev => {
+      let targetComment: Comment | null = null;
+      const updated = prev.map(comm => {
         if (comm.id !== commentId) return comm;
         const hasLiked = comm.likedBy.includes(userId);
-        return {
+        const updatedComm = {
           ...comm,
-          likes: hasLiked ? comm.likes - 1 : comm.likes + 1,
+          likes: hasLiked ? Math.max(0, comm.likes - 1) : comm.likes + 1,
           likedBy: hasLiked ? comm.likedBy.filter(id => id !== userId) : [...comm.likedBy, userId],
         };
-      })
-    );
+        targetComment = updatedComm;
+        return updatedComm;
+      });
+
+      if (targetComment && isSupabaseConfigured) {
+        upsertCommentToCloud(targetComment).catch(err => {
+          console.error('Failed to sync comment like to Supabase:', err);
+        });
+      }
+
+      return updated;
+    });
   };
 
   const evaluateIdea = (ideaId: string, evaluationData: Omit<Evaluation, 'id' | 'createdAt'>) => {
@@ -424,17 +596,28 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: new Date().toISOString(),
     };
 
-    setIdeas(prev =>
-      prev.map(idea => {
+    setIdeas(prev => {
+      let targetIdea: Idea | null = null;
+      const updated = prev.map(idea => {
         if (idea.id !== ideaId) return idea;
-        return {
+        const updatedIdea: Idea = {
           ...idea,
           status: evaluationData.decision,
           evaluations: [newEvaluation, ...idea.evaluations],
           updatedAt: new Date().toISOString(),
         };
-      })
-    );
+        targetIdea = updatedIdea;
+        return updatedIdea;
+      });
+
+      if (targetIdea && isSupabaseConfigured) {
+        upsertIdeaToCloud(targetIdea).catch(err => {
+          console.error('Failed to sync evaluation to Supabase:', err);
+        });
+      }
+
+      return updated;
+    });
 
     if (evaluationData.decision === 'accepted') {
       try {
@@ -499,6 +682,7 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
         stats,
         syncStatus,
         lastSyncTime,
+        isSupabaseConnected: isSupabaseConfigured,
         syncWithCloud,
         pushToCloud,
         pullFromCloud,
