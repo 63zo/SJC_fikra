@@ -17,6 +17,16 @@ import {
   INITIAL_IDEAS
 } from '../data/mockData';
 import { enrichIdeaWithAI } from '../services/aiService';
+import {
+  pushDatabaseToCloud,
+  pullDatabaseFromCloud,
+  mergeIdeas,
+  mergeComments,
+  exportDatabaseBackup,
+  parseDatabaseBackupFile,
+  getLastCloudSyncTime,
+  CloudDatabasePayload,
+} from '../services/cloudSyncService';
 import { useAuth } from './AuthContext';
 
 interface IdeaContextType {
@@ -28,6 +38,13 @@ interface IdeaContextType {
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
   stats: SystemStats;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  lastSyncTime: string | null;
+  syncWithCloud: () => Promise<boolean>;
+  pushToCloud: () => Promise<boolean>;
+  pullFromCloud: () => Promise<boolean>;
+  exportBackup: () => void;
+  importBackup: (file: File) => Promise<{ success: boolean; message: string }>;
   submitIdea: (data: {
     title: string;
     description: string;
@@ -110,6 +127,125 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setGeminiApiKeyState(key);
     localStorage.setItem('fikra_gemini_api_key', key);
   };
+
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [lastSyncTime, setLastSyncTimeState] = useState<string | null>(() => getLastCloudSyncTime());
+
+  const getDatabasePayload = (): CloudDatabasePayload => ({
+    version: '2.0',
+    lastUpdated: new Date().toISOString(),
+    ideas,
+    departments,
+    jobTitles,
+    categories,
+    comments,
+  });
+
+  const pushToCloud = async (): Promise<boolean> => {
+    setSyncStatus('syncing');
+    const res = await pushDatabaseToCloud(getDatabasePayload());
+    if (res.success) {
+      setSyncStatus('synced');
+      setLastSyncTimeState(new Date().toISOString());
+      setTimeout(() => setSyncStatus('idle'), 3000);
+      return true;
+    } else {
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+      return false;
+    }
+  };
+
+  const pullFromCloud = async (): Promise<boolean> => {
+    setSyncStatus('syncing');
+    const res = await pullDatabaseFromCloud();
+    if (res.success && res.data) {
+      if (res.data.ideas) setIdeas(prev => mergeIdeas(prev, res.data!.ideas));
+      if (res.data.departments) setDepartments(res.data.departments);
+      if (res.data.jobTitles) setJobTitles(res.data.jobTitles);
+      if (res.data.categories) setCategories(res.data.categories);
+      if (res.data.comments) setComments(prev => mergeComments(prev, res.data!.comments));
+      setSyncStatus('synced');
+      setLastSyncTimeState(new Date().toISOString());
+      setTimeout(() => setSyncStatus('idle'), 3000);
+      return true;
+    } else {
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+      return false;
+    }
+  };
+
+  const syncWithCloud = async (): Promise<boolean> => {
+    setSyncStatus('syncing');
+    try {
+      const pullRes = await pullDatabaseFromCloud();
+      let mergedIdeas = ideas;
+      let mergedComments = comments;
+
+      if (pullRes.success && pullRes.data) {
+        if (pullRes.data.ideas) mergedIdeas = mergeIdeas(ideas, pullRes.data.ideas);
+        if (pullRes.data.comments) mergedComments = mergeComments(comments, pullRes.data.comments);
+        setIdeas(mergedIdeas);
+        setComments(mergedComments);
+      }
+
+      // Push combined state
+      const pushPayload: CloudDatabasePayload = {
+        version: '2.0',
+        lastUpdated: new Date().toISOString(),
+        ideas: mergedIdeas,
+        departments,
+        jobTitles,
+        categories,
+        comments: mergedComments,
+      };
+
+      const pushRes = await pushDatabaseToCloud(pushPayload);
+      if (pushRes.success) {
+        setSyncStatus('synced');
+        setLastSyncTimeState(new Date().toISOString());
+        setTimeout(() => setSyncStatus('idle'), 3000);
+        return true;
+      }
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+      return false;
+    } catch (e) {
+      setSyncStatus('error');
+      setTimeout(() => setSyncStatus('idle'), 4000);
+      return false;
+    }
+  };
+
+  const exportBackup = () => {
+    exportDatabaseBackup(getDatabasePayload());
+  };
+
+  const importBackup = async (file: File): Promise<{ success: boolean; message: string }> => {
+    try {
+      const data = await parseDatabaseBackupFile(file);
+      if (data.ideas) setIdeas(prev => mergeIdeas(prev, data.ideas));
+      if (data.departments) setDepartments(data.departments);
+      if (data.jobTitles) setJobTitles(data.jobTitles);
+      if (data.categories) setCategories(data.categories);
+      if (data.comments) setComments(prev => mergeComments(prev, data.comments));
+      await pushToCloud();
+      return { success: true, message: 'تم استيراد قاعدة البيانات ومزامنتها بنجاح.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'فشل استيراد قاعدة البيانات.' };
+    }
+  };
+
+  // Initial cloud check on mount if online
+  useEffect(() => {
+    if (navigator.onLine) {
+      const timer = setTimeout(() => {
+        syncWithCloud().catch(() => {});
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('fikra_ideas', JSON.stringify(ideas));
@@ -361,6 +497,13 @@ export const IdeaProvider: React.FC<{ children: React.ReactNode }> = ({ children
         geminiApiKey,
         setGeminiApiKey,
         stats,
+        syncStatus,
+        lastSyncTime,
+        syncWithCloud,
+        pushToCloud,
+        pullFromCloud,
+        exportBackup,
+        importBackup,
         submitIdea,
         voteIdea,
         addComment,

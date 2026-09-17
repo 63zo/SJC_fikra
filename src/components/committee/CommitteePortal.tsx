@@ -21,15 +21,24 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { useIdeas } from '../../context/IdeaContext';
 import { IdeaCard } from '../ideas/IdeaCard';
+import {
+  StatusDoughnutChart,
+  DepartmentBarChart,
+  CategoryDistributionChart,
+  EvaluationRadarChart,
+} from '../dashboard/Charts';
+import { BarChart3, PieChart as PieChartIcon } from 'lucide-react';
 
 interface CommitteePortalProps {
   onOpenDetails: (idea: Idea) => void;
+  onOpenEvaluate?: (idea: Idea) => void;
 }
 
-export const CommitteePortal: React.FC<CommitteePortalProps> = ({ onOpenDetails }) => {
+export const CommitteePortal: React.FC<CommitteePortalProps> = ({ onOpenDetails, onOpenEvaluate }) => {
   const { t, language, dir } = useLanguage();
   const { currentUser } = useAuth();
-  const { ideas, evaluateIdea } = useIdeas();
+  const { ideas, categories, stats, evaluateIdea } = useIdeas();
+  const [activeView, setActiveView] = useState<'ideas' | 'charts'>('ideas');
 
   const [selectedIdeaForEval, setSelectedIdeaForEval] = useState<Idea | null>(null);
   const [filterStatus, setFilterStatus] = useState<'pending' | 'all' | 'accepted' | 'feasibility' | 'rejected'>('pending');
@@ -168,77 +177,203 @@ export const CommitteePortal: React.FC<CommitteePortalProps> = ({ onOpenDetails 
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      {/* Main Switcher: Ideas List vs Graphical Charts */}
+      <div className="flex items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => setFilterStatus('pending')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterStatus === 'pending'
+            onClick={() => setActiveView('ideas')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              activeView === 'ideas'
                 ? 'bg-sjc-maroon text-white shadow-md'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            {language === 'ar' ? 'بانتظار التقييم' : 'Pending Review'} ({pendingIdeas.length})
+            <Shield className="w-4 h-4 text-sjc-gold" />
+            <span>{language === 'ar' ? 'قائمة المقترحات للتحكيم' : 'Proposals Review List'}</span>
           </button>
 
           <button
-            onClick={() => setFilterStatus('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterStatus === 'all'
+            onClick={() => setActiveView('charts')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              activeView === 'charts'
                 ? 'bg-sjc-maroon text-white shadow-md'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            {t.filterAll} ({ideas.length})
-          </button>
-
-          <button
-            onClick={() => setFilterStatus('accepted')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterStatus === 'accepted'
-                ? 'bg-sjc-maroon text-white shadow-md'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            {t.filterAccepted}
-          </button>
-
-          <button
-            onClick={() => setFilterStatus('feasibility')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              filterStatus === 'feasibility'
-                ? 'bg-sjc-maroon text-white shadow-md'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            {t.status_feasibility}
+            <BarChart3 className="w-4 h-4 text-sjc-gold" />
+            <span>{language === 'ar' ? 'الرسوم البيانية والإحصائيات' : 'Graphical Charts & Analytics'}</span>
           </button>
         </div>
+
+        <span className="text-[11px] text-slate-400 font-semibold px-2 hidden sm:inline">
+          {language === 'ar' ? 'منظومة تقييم الأفكار والمبادرات' : 'Evaluation & Scoring Engine'}
+        </span>
       </div>
 
-      {/* Ideas Grid */}
-      {filteredIdeas.length === 0 ? (
-        <div className="py-16 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
-          <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto" />
-          <h3 className="text-base font-bold text-slate-800">
-            {language === 'ar' ? 'لا توجد أفكار معلقة في هذا القسم حالياً' : 'No ideas in this category'}
-          </h3>
-          <p className="text-xs text-slate-500">
-            {language === 'ar' ? 'تمت مراجعة جميع الأفكار بنجاح.' : 'All proposals have been processed.'}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredIdeas.map((idea) => (
-            <div key={idea.id} className="relative flex flex-col">
-              <IdeaCard
-                idea={idea}
-                onOpenDetails={onOpenDetails}
-                onOpenEvaluate={handleOpenEvalModal}
-              />
+      {/* GRAPHICAL CHARTS VIEW */}
+      {activeView === 'charts' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-white rounded-2xl border border-emerald-200/80 shadow-xs bg-emerald-50/20">
+              <span className="text-xs font-bold text-emerald-700 block">{t.statAcceptedIdeas}</span>
+              <p className="text-2xl font-black text-emerald-700 mt-1">{stats.acceptedIdeas}</p>
+              <span className="text-[10px] text-slate-400">{language === 'ar' ? 'مقترحات معتمدة' : 'Approved proposals'}</span>
             </div>
-          ))}
+
+            <div className="p-4 bg-white rounded-2xl border border-blue-200/80 shadow-xs bg-blue-50/20">
+              <span className="text-xs font-bold text-blue-700 block">{t.statFeasibility}</span>
+              <p className="text-2xl font-black text-blue-700 mt-1">{stats.feasibilityIdeas}</p>
+              <span className="text-[10px] text-slate-400">{language === 'ar' ? 'قيد دراسة الجدوى' : 'In feasibility study'}</span>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-amber-200/80 shadow-xs bg-amber-50/20">
+              <span className="text-xs font-bold text-amber-700 block">{t.statUnderReview}</span>
+              <p className="text-2xl font-black text-amber-700 mt-1">{stats.underReviewIdeas}</p>
+              <span className="text-[10px] text-slate-400">{language === 'ar' ? 'بانتظار قرار اللجنة' : 'Pending review'}</span>
+            </div>
+
+            <div className="p-4 bg-white rounded-2xl border border-rose-200/80 shadow-xs bg-rose-50/20">
+              <span className="text-xs font-bold text-rose-700 block">{t.status_rejected}</span>
+              <p className="text-2xl font-black text-rose-700 mt-1">{stats.rejectedIdeas}</p>
+              <span className="text-[10px] text-slate-400">{language === 'ar' ? 'مقترحات معتذر عنها' : 'Declined proposals'}</span>
+            </div>
+          </div>
+
+          {/* Row 1 Charts: Status Doughnut + Department Bar */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <PieChartIcon className="w-5 h-5 text-sjc-maroon" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'توزيع حالات الأفكار (المعتمد والمرفوض وقيد الدراسة)' : 'Status Breakdown Chart'}
+                  </h3>
+                </div>
+              </div>
+              <StatusDoughnutChart stats={stats} language={language} />
+            </div>
+
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-sjc-maroon" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'توزيع المقترحات حسب المحاكم والإدارات' : 'Ideas by Courts & Departments'}
+                  </h3>
+                </div>
+              </div>
+              <DepartmentBarChart ideas={ideas} language={language} />
+            </div>
+          </div>
+
+          {/* Row 2 Charts: Categories Doughnut + Radar Chart */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-sjc-gold" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'تصنيفات ومجالات الابتكار القضائي' : 'Innovation Categories Distribution'}
+                  </h3>
+                </div>
+              </div>
+              <CategoryDistributionChart ideas={ideas} categories={categories} language={language} />
+            </div>
+
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Star className="w-5 h-5 text-sjc-gold fill-sjc-gold" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {language === 'ar' ? 'متوسط معايير التقييم والتحكيم القضائي' : 'Average Evaluation Criteria Radar'}
+                  </h3>
+                </div>
+              </div>
+              <EvaluationRadarChart ideas={ideas} language={language} />
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* IDEAS LIST VIEW */}
+      {activeView === 'ideas' && (
+        <div className="space-y-6">
+          {/* Filter Tabs */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => setFilterStatus('pending')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  filterStatus === 'pending'
+                    ? 'bg-sjc-maroon text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {language === 'ar' ? 'بانتظار التقييم' : 'Pending Review'} ({pendingIdeas.length})
+              </button>
+
+              <button
+                onClick={() => setFilterStatus('all')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  filterStatus === 'all'
+                    ? 'bg-sjc-maroon text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {t.filterAll} ({ideas.length})
+              </button>
+
+              <button
+                onClick={() => setFilterStatus('accepted')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  filterStatus === 'accepted'
+                    ? 'bg-sjc-maroon text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {t.filterAccepted}
+              </button>
+
+              <button
+                onClick={() => setFilterStatus('feasibility')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  filterStatus === 'feasibility'
+                    ? 'bg-sjc-maroon text-white shadow-md'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {t.status_feasibility}
+              </button>
+            </div>
+          </div>
+
+          {/* Ideas Grid */}
+          {filteredIdeas.length === 0 ? (
+            <div className="py-16 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+              <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto" />
+              <h3 className="text-base font-bold text-slate-800">
+                {language === 'ar' ? 'لا توجد أفكار معلقة في هذا القسم حالياً' : 'No ideas in this category'}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {language === 'ar' ? 'تمت مراجعة جميع الأفكار بنجاح.' : 'All proposals have been processed.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredIdeas.map((idea) => (
+                <div key={idea.id} className="relative flex flex-col">
+                  <IdeaCard
+                    idea={idea}
+                    onOpenDetails={onOpenDetails}
+                    onOpenEvaluate={onOpenEvaluate || handleOpenEvalModal}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

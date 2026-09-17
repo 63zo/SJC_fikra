@@ -13,6 +13,7 @@ import { AdminConsole } from './components/admin/AdminConsole';
 import { LeaderboardView } from './components/leaderboard/LeaderboardView';
 import { AuthModal } from './components/auth/AuthModal';
 import { UserProfileModal } from './components/profile/UserProfileModal';
+import { EvaluationModal } from './components/committee/EvaluationModal';
 import { Idea } from './types';
 
 const AppContent: React.FC = () => {
@@ -30,6 +31,17 @@ const AppContent: React.FC = () => {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [evaluateModalOpen, setEvaluateModalOpen] = useState(false);
+  const [ideaToEvaluate, setIdeaToEvaluate] = useState<Idea | null>(null);
+
+  // Role tab safeguard
+  React.useEffect(() => {
+    if (currentUser?.role === 'employee' && (activeTab === 'committee' || activeTab === 'admin')) {
+      setActiveTab('explore');
+    } else if (currentUser?.role === 'committee' && activeTab === 'admin') {
+      setActiveTab('committee');
+    }
+  }, [currentUser?.role]);
 
   const handleOpenAuth = (mode: 'login' | 'signup' | 'forgot') => {
     setAuthModalMode(mode);
@@ -50,8 +62,8 @@ const AppContent: React.FC = () => {
   };
 
   const handleOpenEvaluate = (idea: Idea) => {
-    setSelectedIdea(idea);
-    setActiveTab('committee');
+    setIdeaToEvaluate(idea);
+    setEvaluateModalOpen(true);
   };
 
   return (
@@ -85,6 +97,7 @@ const AppContent: React.FC = () => {
         {activeTab === 'committee' && (
           <CommitteePortal
             onOpenDetails={handleOpenIdeaDetails}
+            onOpenEvaluate={handleOpenEvaluate}
           />
         )}
 
@@ -121,6 +134,15 @@ const AppContent: React.FC = () => {
           setSelectedIdea(null);
         }}
         onOpenEvaluate={handleOpenEvaluate}
+      />
+
+      <EvaluationModal
+        isOpen={evaluateModalOpen}
+        idea={ideaToEvaluate}
+        onClose={() => {
+          setEvaluateModalOpen(false);
+          setIdeaToEvaluate(null);
+        }}
       />
 
       <UserProfileModal

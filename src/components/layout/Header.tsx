@@ -12,9 +12,13 @@ import {
   Menu,
   X,
   KeyRound,
+  Cloud,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
+import { useIdeas } from '../../context/IdeaContext';
 import { UserRole } from '../../types';
 
 interface HeaderProps {
@@ -34,7 +38,19 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const { t, language, toggleLanguage } = useLanguage();
   const { currentUser, logout, switchDemoRole } = useAuth();
+  const { syncStatus, syncWithCloud, lastSyncTime } = useIdeas();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleRoleSwitch = (role: UserRole) => {
+    switchDemoRole(role);
+    if (role === 'committee') {
+      setActiveTab('committee');
+    } else if (role === 'admin') {
+      setActiveTab('admin');
+    } else {
+      setActiveTab('explore');
+    }
+  };
 
   const navItems = [
     { id: 'explore', label: t.navExplore, icon: Compass },
@@ -52,38 +68,78 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm transition-all duration-200">
       {/* Top Gold & Maroon National Emblem Bar */}
       <div className="bg-gradient-to-r from-sjc-maroon via-sjc-maroon-800 to-sjc-maroon text-white text-[11px] py-1.5 px-3 sm:px-8 flex items-center justify-between border-b border-sjc-gold/30">
-        <div className="flex items-center gap-1.5 truncate max-w-[55%] sm:max-w-none">
+        <div className="flex items-center gap-1.5 truncate max-w-[45%] sm:max-w-none">
           <span className="inline-block w-2 h-2 rounded-full bg-sjc-gold shrink-0 animate-pulse"></span>
           <span className="font-bold tracking-wide truncate">
             {t.portalTitle}
           </span>
         </div>
 
-        {/* Quick Demo Role Switcher */}
-        <div className="flex items-center gap-1 shrink-0 text-[10px] sm:text-xs">
-          <span className="hidden md:inline text-sjc-gold/90 font-medium">
-            {t.switchRole}
-          </span>
-          <div className="flex items-center bg-black/25 rounded-lg p-0.5 border border-sjc-gold/30">
-            {(['employee', 'committee', 'admin'] as UserRole[]).map((role) => (
-              <button
-                key={role}
-                onClick={() => switchDemoRole(role)}
-                className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all ${
-                  currentUser?.role === role
-                    ? 'bg-sjc-gold text-sjc-slate-dark shadow-xs'
-                    : 'text-slate-200 hover:text-white'
-                }`}
-                title={`Switch demo role to ${role}`}
-              >
-                {role === 'employee'
-                  ? language === 'ar' ? 'موظف' : 'Emp'
-                  : role === 'committee'
-                  ? language === 'ar' ? 'لجنة' : 'Comm'
-                  : language === 'ar' ? 'مشرف' : 'Admin'}
-              </button>
-            ))}
+        {/* Right side: Cloud Sync Status & Role Switcher */}
+        <div className="flex items-center gap-2 shrink-0 text-[10px] sm:text-xs">
+          
+          {/* Cloud Database Sync Status & Action Button */}
+          <button
+            onClick={() => syncWithCloud()}
+            disabled={syncStatus === 'syncing'}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-bold transition-all ${
+              syncStatus === 'syncing'
+                ? 'bg-amber-500/30 text-amber-200 border-amber-400/50 animate-pulse'
+                : syncStatus === 'synced'
+                ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
+                : syncStatus === 'error'
+                ? 'bg-rose-500/30 text-rose-200 border-rose-400/50'
+                : 'bg-black/20 hover:bg-black/30 text-slate-200 border-sjc-gold/30'
+            }`}
+            title={
+              language === 'ar'
+                ? `مزامنة سحابية (آخر تحديث: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString('ar-QA') : 'مكتمل'})`
+                : `Cloud Sync (Last: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : 'Ready'})`
+            }
+          >
+            <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin text-amber-300' : 'text-sjc-gold'}`} />
+            <span className="hidden xs:inline">
+              {syncStatus === 'syncing'
+                ? language === 'ar' ? 'جاري المزامنة' : 'Syncing...'
+                : syncStatus === 'synced'
+                ? language === 'ar' ? 'متزامن' : 'Synced'
+                : syncStatus === 'error'
+                ? language === 'ar' ? 'إعادة المحاولة' : 'Retry'
+                : language === 'ar' ? 'مزامنة السحابة' : 'Cloud Sync'}
+            </span>
+          </button>
+
+          {/* Quick Demo Role Switcher */}
+          <div className="flex items-center gap-1">
+            <span className="hidden md:inline text-sjc-gold/90 font-medium">
+              {t.switchRole}
+            </span>
+            <div className="flex items-center bg-black/25 rounded-lg p-0.5 border border-sjc-gold/30 shadow-inner">
+              {(['employee', 'committee', 'admin'] as UserRole[]).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => handleRoleSwitch(role)}
+                  className={`px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold transition-all ${
+                    currentUser?.role === role
+                      ? 'bg-sjc-gold text-sjc-slate-dark shadow-xs scale-105'
+                      : 'text-slate-200 hover:text-white'
+                  }`}
+                  title={
+                    language === 'ar'
+                      ? `التبديل إلى وضع ${role === 'employee' ? 'الموظف' : role === 'committee' ? 'لجنة التحكيم' : 'المشرف العام'}`
+                      : `Switch to ${role}`
+                  }
+                >
+                  {role === 'employee'
+                    ? language === 'ar' ? 'موظف' : 'Emp'
+                    : role === 'committee'
+                    ? language === 'ar' ? 'لجنة' : 'Comm'
+                    : language === 'ar' ? 'مشرف' : 'Admin'}
+                </button>
+              ))}
+            </div>
           </div>
+
         </div>
       </div>
 

@@ -11,18 +11,47 @@ import {
   Save,
   Sparkles,
   ShieldAlert,
+  Cloud,
+  Download,
+  Upload,
+  RefreshCw,
+  BarChart3,
+  Database,
+  FileJson,
+  Shield,
+  Star,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useIdeas } from '../../context/IdeaContext';
+import {
+  getCloudSyncConfig,
+  saveCloudSyncConfig,
+  CloudSyncConfig,
+} from '../../services/cloudSyncService';
+import {
+  StatusDoughnutChart,
+  DepartmentBarChart,
+  CategoryDistributionChart,
+  EvaluationRadarChart,
+} from '../dashboard/Charts';
 
 export const AdminConsole: React.FC = () => {
   const { t, language } = useLanguage();
   const {
+    ideas,
+    stats,
     departments,
     jobTitles,
     categories,
     geminiApiKey,
     setGeminiApiKey,
+    syncStatus,
+    lastSyncTime,
+    syncWithCloud,
+    pushToCloud,
+    pullFromCloud,
+    exportBackup,
+    importBackup,
     addDepartment,
     deleteDepartment,
     addJobTitle,
@@ -31,7 +60,7 @@ export const AdminConsole: React.FC = () => {
     deleteCategory,
   } = useIdeas();
 
-  const [activeTab, setActiveTab] = useState<'departments' | 'jobs' | 'categories' | 'ai'>('departments');
+  const [activeTab, setActiveTab] = useState<'departments' | 'jobs' | 'categories' | 'charts' | 'cloudSync' | 'ai'>('cloudSync');
 
   // New Department Form State
   const [newDeptNameAr, setNewDeptNameAr] = useState('');
@@ -46,6 +75,36 @@ export const AdminConsole: React.FC = () => {
   const [newCatNameAr, setNewCatNameAr] = useState('');
   const [newCatNameEn, setNewCatNameEn] = useState('');
   const [newCatColor, setNewCatColor] = useState('#8A1538');
+
+  // Cloud Sync state
+  const [cloudConfig, setCloudConfigState] = useState<CloudSyncConfig>(() => getCloudSyncConfig());
+  const [cloudEndpointInput, setCloudEndpointInput] = useState(cloudConfig.endpointUrl);
+  const [cloudApiKeyInput, setCloudApiKeyInput] = useState(cloudConfig.apiKey);
+  const [cloudProviderInput, setCloudProviderInput] = useState(cloudConfig.cloudProvider);
+  const [cloudSavedMsg, setCloudSavedMsg] = useState(false);
+  const [importStatusMsg, setImportStatusMsg] = useState<{ text: string; error?: boolean } | null>(null);
+
+  const handleSaveCloudConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated: CloudSyncConfig = {
+      endpointUrl: cloudEndpointInput.trim(),
+      apiKey: cloudApiKeyInput.trim(),
+      autoSync: true,
+      cloudProvider: cloudProviderInput,
+    };
+    setCloudConfigState(updated);
+    saveCloudSyncConfig(updated);
+    setCloudSavedMsg(true);
+    setTimeout(() => setCloudSavedMsg(false), 2500);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const res = await importBackup(file);
+    setImportStatusMsg({ text: res.message, error: !res.success });
+    setTimeout(() => setImportStatusMsg(null), 4000);
+  };
 
   // AI Key state
   const [apiKeyInput, setApiKeyInput] = useState(geminiApiKey);
@@ -118,10 +177,47 @@ export const AdminConsole: React.FC = () => {
             {t.adminSubtitle}
           </p>
         </div>
+
+        {/* Quick Cloud Sync Badge */}
+        <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/20 flex items-center gap-3">
+          <div className={`p-2 rounded-xl ${syncStatus === 'syncing' ? 'bg-amber-500/30 text-amber-300' : 'bg-sjc-gold/20 text-sjc-gold'}`}>
+            <Cloud className="w-6 h-6" />
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-300 font-semibold">{language === 'ar' ? 'قاعدة البيانات السحابية' : 'Cloud Database'}</p>
+            <p className="text-xs font-bold text-white">
+              {syncStatus === 'syncing' ? (language === 'ar' ? 'جاري المزامنة...' : 'Syncing...') : (language === 'ar' ? 'متصل ومتزامن' : 'Connected')}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Admin Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('cloudSync')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'cloudSync'
+              ? 'bg-sjc-maroon text-white shadow-md'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Cloud className="w-4 h-4" />
+          <span>{language === 'ar' ? 'المزامنة السحابية والنسخ الاحتياطي' : 'Cloud Sync & Backup'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('charts')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'charts'
+              ? 'bg-sjc-maroon text-white shadow-md'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          <span>{language === 'ar' ? 'الرسوم البيانية للمنظومة' : 'Visual Charts'}</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('departments')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
@@ -477,6 +573,258 @@ export const AdminConsole: React.FC = () => {
               <span>{t.saveAISettings}</span>
             </button>
           </form>
+        </div>
+      )}
+
+      {/* TAB: CLOUD SYNC & BACKUP */}
+      {activeTab === 'cloudSync' && (
+        <div className="space-y-6">
+          
+          {/* Cloud Status & Quick Sync Actions Card */}
+          <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-sjc-maroon-50 text-sjc-maroon rounded-2xl">
+                  <Cloud className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {language === 'ar' ? 'مزامنة قاعدة البيانات السحابية الحية' : 'Live Cloud Database Synchronization'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {language === 'ar'
+                      ? 'ربط وتحديث ومزامنة الأفكار والملاحظات والتقييمات بين الأجهزة وقاعدة البيانات المركزية'
+                      : 'Real-time synchronization between browser storage and cloud database'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Live Status indicator */}
+              <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${syncStatus === 'syncing' ? 'bg-amber-500 animate-ping' : syncStatus === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                <span className="text-xs font-bold text-slate-800">
+                  {syncStatus === 'syncing'
+                    ? (language === 'ar' ? 'جاري الاتصال والمزامنة...' : 'Syncing...')
+                    : syncStatus === 'synced'
+                    ? (language === 'ar' ? 'متزامن بالكامل' : 'Fully Synced')
+                    : syncStatus === 'error'
+                    ? (language === 'ar' ? 'خطأ في الاتصال' : 'Sync Error')
+                    : (language === 'ar' ? 'جاهز للمزامنة' : 'Ready')}
+                </span>
+                {lastSyncTime && (
+                  <span className="text-[10px] text-slate-400 ms-1">
+                    ({new Date(lastSyncTime).toLocaleTimeString(language === 'ar' ? 'ar-QA' : 'en-US')})
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Sync Action Buttons */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => syncWithCloud()}
+                disabled={syncStatus === 'syncing'}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-sjc-maroon hover:bg-sjc-maroon-800 text-white font-bold text-xs shadow-md shadow-sjc-maroon/20 transition-all cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 text-sjc-gold ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                <span>{language === 'ar' ? 'مزامنة فورية الآن (Two-Way Sync)' : 'Sync Now'}</span>
+              </button>
+
+              <button
+                onClick={() => pushToCloud()}
+                disabled={syncStatus === 'syncing'}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+              >
+                <Upload className="w-4 h-4 text-sjc-gold" />
+                <span>{language === 'ar' ? 'رفع المحلي للسحابة (Push)' : 'Push to Cloud'}</span>
+              </button>
+
+              <button
+                onClick={() => pullFromCloud()}
+                disabled={syncStatus === 'syncing'}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-200 transition-all cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-slate-600" />
+                <span>{language === 'ar' ? 'استعادة وتحديث من السحابة (Pull)' : 'Pull from Cloud'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Backup & Restore Card */}
+          <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="p-2.5 bg-amber-50 text-amber-800 rounded-xl">
+                <Database className="w-5 h-5 text-sjc-gold" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {language === 'ar' ? 'النسخ الاحتياطي ونقل البيانات (Export & Import Backup)' : 'Backup & Data Export'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {language === 'ar' ? 'تصدير كامل بيانات الأفكار والتقييمات كملف JSON أو استيرادها على أي جهاز آخر' : 'Download JSON snapshot or restore'}
+                </p>
+              </div>
+            </div>
+
+            {importStatusMsg && (
+              <div className={`p-3 rounded-xl text-xs font-bold ${importStatusMsg.error ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                {importStatusMsg.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <button
+                onClick={exportBackup}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-all"
+              >
+                <Download className="w-4 h-4 text-sjc-gold" />
+                <span>{language === 'ar' ? 'تحميل نسخة احتياطية كاملة (JSON)' : 'Export Full Backup JSON'}</span>
+              </button>
+
+              <label className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer">
+                <Upload className="w-4 h-4" />
+                <span>{language === 'ar' ? 'استيراد واستعادة من ملف...' : 'Import from File...'}</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Cloud Database Endpoint Configuration */}
+          <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm max-w-2xl space-y-4">
+            <h3 className="text-sm font-bold text-slate-900">
+              {language === 'ar' ? 'إعدادات نقطة الاتصال السحابية (Cloud Configuration)' : 'Cloud Endpoint Settings'}
+            </h3>
+
+            <form onSubmit={handleSaveCloudConfig} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {language === 'ar' ? 'مزود السحابة (Cloud Provider)' : 'Cloud Provider'}
+                </label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCloudProviderInput('builtin')}
+                    className={`p-3 rounded-xl font-bold border transition-all text-center ${cloudProviderInput === 'builtin' ? 'bg-sjc-maroon text-white border-sjc-maroon' : 'bg-slate-50 text-slate-700'}`}
+                  >
+                    {language === 'ar' ? 'السحابة السريعة المدمجة (موصى به)' : 'Built-in Cloud Relay'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCloudProviderInput('custom')}
+                    className={`p-3 rounded-xl font-bold border transition-all text-center ${cloudProviderInput === 'custom' ? 'bg-sjc-maroon text-white border-sjc-maroon' : 'bg-slate-50 text-slate-700'}`}
+                  >
+                    {language === 'ar' ? 'نقطة اتصال مخصصة (Custom REST/Supabase)' : 'Custom Endpoint'}
+                  </button>
+                </div>
+              </div>
+
+              {cloudProviderInput === 'custom' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'رابط خادم السحابة (Endpoint URL)' : 'Endpoint URL'}
+                    </label>
+                    <input
+                      type="url"
+                      value={cloudEndpointInput}
+                      onChange={(e) => setCloudEndpointInput(e.target.value)}
+                      placeholder="https://api.yourdomain.com/fikra/sync"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {language === 'ar' ? 'مفتاح الترخيص السحابي (API Key / Token)' : 'API Key / Token'}
+                    </label>
+                    <input
+                      type="password"
+                      value={cloudApiKeyInput}
+                      onChange={(e) => setCloudApiKeyInput(e.target.value)}
+                      placeholder="Bearer token or API key"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
+                </>
+              )}
+
+              {cloudSavedMsg && (
+                <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{language === 'ar' ? 'تم حفظ إعدادات السحابة وتفعيل المزامنة!' : 'Cloud settings saved!'}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-sjc-maroon hover:bg-sjc-maroon-800 text-white font-bold text-xs shadow-md flex items-center gap-2"
+              >
+                <Save className="w-4 h-4 text-sjc-gold" />
+                <span>{language === 'ar' ? 'حفظ إعدادات المزامنة السحابية' : 'Save Cloud Settings'}</span>
+              </button>
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB: VISUAL CHARTS */}
+      {activeTab === 'charts' && (
+        <div className="space-y-6">
+          <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                {language === 'ar' ? 'الرسوم البيانية والإحصائيات الشاملة لمنظومة فكرة' : 'System Visual Analytics & Charts'}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {language === 'ar' ? 'مؤشرات أداء متقدمة وتوزيع المقترحات حسب الحالات والتصنيفات والمحاكم' : 'Advanced indicators & proposal distributions'}
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-sjc-maroon-50 text-sjc-maroon font-bold text-xs rounded-full border border-sjc-maroon/20">
+              {stats.totalIdeas} {language === 'ar' ? 'مقترح مسجل' : 'Ideas Total'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-sjc-maroon" />
+                <span>{language === 'ar' ? 'توزيع الأفكار حسب المحاكم والإدارات' : 'Ideas by Courts & Departments'}</span>
+              </h4>
+              <DepartmentBarChart ideas={ideas} language={language} />
+            </div>
+
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-sjc-maroon" />
+                <span>{language === 'ar' ? 'توزيع حالات الاعتماد والرفض والمراجعة' : 'Status Distribution'}</span>
+              </h4>
+              <StatusDoughnutChart stats={stats} language={language} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-sjc-gold" />
+                <span>{language === 'ar' ? 'تصنيفات ومجالات الابتكار القضائي' : 'Categories Distribution'}</span>
+              </h4>
+              <CategoryDistributionChart ideas={ideas} categories={categories} language={language} />
+            </div>
+
+            <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Star className="w-4 h-4 text-sjc-gold fill-sjc-gold" />
+                <span>{language === 'ar' ? 'متوسط معايير التقييم والتحكيم' : 'Review Criteria Radar'}</span>
+              </h4>
+              <EvaluationRadarChart ideas={ideas} language={language} />
+            </div>
+          </div>
         </div>
       )}
 

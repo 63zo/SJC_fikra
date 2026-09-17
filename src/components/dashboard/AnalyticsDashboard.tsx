@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   BarChart3,
   PieChart,
@@ -13,10 +12,17 @@ import {
   Award,
   Sparkles,
   Layers,
+  Star,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useIdeas } from '../../context/IdeaContext';
 import { Idea } from '../../types';
+import {
+  StatusDoughnutChart,
+  DepartmentBarChart,
+  CategoryDistributionChart,
+  EvaluationRadarChart,
+} from './Charts';
 
 interface AnalyticsDashboardProps {
   onOpenDetails: (idea: Idea) => void;
@@ -159,9 +165,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onOpenDe
         
         {/* Department Idea Distribution (Bar Graph) */}
         <div className="lg:col-span-2 p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <Building className="w-4 h-4 text-sjc-maroon" />
+              <Building className="w-5 h-5 text-sjc-maroon" />
               <h3 className="text-sm font-bold text-slate-900">
                 {t.chartDeptDistribution}
               </h3>
@@ -171,63 +177,26 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onOpenDe
             </span>
           </div>
 
-          <div className="space-y-3.5 pt-2">
-            {sortedDepts.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-8">{t.noIdeasFound}</p>
-            ) : (
-              sortedDepts.map(([deptName, count]) => {
-                const percent = Math.round((count / maxDeptCount) * 100);
-                return (
-                  <div key={deptName} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-bold">
-                      <span className="text-slate-800 line-clamp-1">{deptName}</span>
-                      <span className="text-sjc-maroon shrink-0">{count} {language === 'ar' ? 'أفكار' : 'ideas'}</span>
-                    </div>
-                    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                      <div
-                        className="h-full bg-gradient-to-r from-sjc-maroon to-sjc-gold rounded-full transition-all duration-500"
-                        style={{ width: `${percent}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          <div className="pt-2">
+            <DepartmentBarChart ideas={ideas} language={language} />
           </div>
         </div>
 
-        {/* Status Distribution Breakdown */}
-        <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center gap-2">
-            <PieChart className="w-4 h-4 text-sjc-maroon" />
-            <h3 className="text-sm font-bold text-slate-900">
-              {t.chartStatusBreakdown}
-            </h3>
-          </div>
+        {/* Status Distribution Breakdown (Doughnut Chart) */}
+        <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-3">
+              <PieChart className="w-5 h-5 text-sjc-maroon" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {t.chartStatusBreakdown}
+              </h3>
+            </div>
 
-          <div className="space-y-3 pt-2">
-            {statusStats.map((item, idx) => {
-              const ratio = stats.totalIdeas > 0 ? Math.round((item.count / stats.totalIdeas) * 100) : 0;
-              return (
-                <div
-                  key={idx}
-                  className={`p-3.5 rounded-2xl ${item.bgLight} border border-slate-200/60 flex items-center justify-between text-xs`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-3 h-3 rounded-full ${item.color}`}></span>
-                    <span className="font-bold text-slate-800">{item.label}</span>
-                  </div>
-                  <div className="text-end">
-                    <span className={`font-black text-sm ${item.text}`}>{item.count}</span>
-                    <span className="text-[10px] text-slate-400 block font-semibold">{ratio}%</span>
-                  </div>
-                </div>
-              );
-            })}
+            <StatusDoughnutChart stats={stats} language={language} />
           </div>
 
           {/* SJC Innovation Quality Badge */}
-          <div className="mt-4 p-4 rounded-2xl bg-gradient-to-br from-sjc-maroon-50 to-amber-50 border border-sjc-maroon/20 text-center space-y-1">
+          <div className="mt-2 p-4 rounded-2xl bg-gradient-to-br from-sjc-maroon-50 to-amber-50 border border-sjc-maroon/20 text-center space-y-1">
             <Sparkles className="w-5 h-5 text-sjc-gold mx-auto" />
             <h4 className="text-xs font-bold text-sjc-maroon">
               {language === 'ar' ? 'مؤشر الكفاءة القضائية والابتكار' : 'Judicial Innovation Index'}
@@ -236,7 +205,35 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({ onOpenDe
               {language === 'ar' ? '94.2% مؤشر التفاعل والمشاركة المؤسسية' : '94.2% Institutional Participation Index'}
             </p>
           </div>
+        </div>
 
+      </div>
+
+      {/* Row 2: Categories Distribution & Evaluation Radar */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-sjc-gold" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {language === 'ar' ? 'توزيع الأفكار حسب مجالات الابتكار القضائي' : 'Ideas by Innovation Category'}
+              </h3>
+            </div>
+          </div>
+          <CategoryDistributionChart ideas={ideas} categories={categories} language={language} />
+        </div>
+
+        <div className="p-6 bg-white rounded-3xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <Star className="w-5 h-5 text-sjc-gold fill-sjc-gold" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {language === 'ar' ? 'متوسط معايير التحكيم (الجدوى، الأثر، التكلفة، الابتكار)' : 'Review Criteria Radar Chart'}
+              </h3>
+            </div>
+          </div>
+          <EvaluationRadarChart ideas={ideas} language={language} />
         </div>
 
       </div>

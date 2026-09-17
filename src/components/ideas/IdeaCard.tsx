@@ -214,10 +214,14 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({
             {/* If user is committee member, show evaluate button */}
             {(currentUser?.role === 'committee' || currentUser?.role === 'admin') && onOpenEvaluate && (
               <button
-                onClick={() => onOpenEvaluate(idea)}
-                className="px-2.5 py-1 rounded-lg bg-sjc-gold/20 hover:bg-sjc-gold/30 text-sjc-slate-dark text-[11px] font-bold border border-sjc-gold/40 flex items-center gap-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenEvaluate(idea);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-sjc-gold/25 text-amber-950 border border-sjc-gold/50 text-[11px] font-bold flex items-center gap-1.5 shadow-xs hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                title={language === 'ar' ? 'فتح شاشة التحكيم والتقييم' : 'Open Evaluation Screen'}
               >
-                <Star className="w-3 h-3 text-sjc-gold fill-sjc-gold" />
+                <Star className="w-3.5 h-3.5 text-sjc-gold fill-sjc-gold shrink-0" />
                 <span>{language === 'ar' ? 'تقييم' : 'Evaluate'}</span>
               </button>
             )}
